@@ -8,6 +8,7 @@ let options = { maxFaces: 1, refineLandmarks: false, flipHorizontal: false };
 let sfasamento = 10;
 let scaleFactor = 1;
 let rotationAngle = 0;
+let grabActive = false;
 
 function preload() {
   handPose = ml5.handPose({ flipped: false });
@@ -16,7 +17,6 @@ function preload() {
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
-
   video = createCapture(VIDEO);
   video.size(width, height);
   video.hide();
@@ -32,26 +32,35 @@ function draw() {
   background(0);
   image(video, 0, 0, width, height);
 
+  grabActive = false;
+
   for (let hand of hands) {
-    let indexTip = hand.keypoints.find((p) => p.name === "index_finger_tip");
-    let indexBase = hand.keypoints.find((p) => p.name === "index_finger_mcp");
-    let thumbTip = hand.keypoints.find((p) => p.name === "thumb_tip");
-    let pinkyTip = hand.keypoints.find((p) => p.name === "pinky_tip");
+    const kp = (name) => hand.keypoints.find((p) => p.name === name);
+
+    let indexTip = kp("index_finger_tip");
+    let indexBase = kp("index_finger_mcp");
+    let thumbTip = kp("thumb_tip");
+    let pinkyTip = kp("pinky_tip");
 
     if (thumbTip && pinkyTip && indexTip && indexBase) {
-      // 🖐 Mano destra → thumbTip.x < pinkyTip.x
+      let distance = dist(indexTip.x, indexTip.y, thumbTip.x, thumbTip.y);
+
+      // Mano destra (pollice a sinistra del mignolo)
       if (thumbTip.x < pinkyTip.x) {
-        // Controlla solo ROTAZIONE
+        // Calcolo della rotazione
         let dir = createVector(
           indexTip.x - indexBase.x,
           indexTip.y - indexBase.y
         );
         rotationAngle = dir.heading();
-      }
 
-      // ✋ Mano sinistra → thumbTip.x > pinkyTip.x
-      else if (thumbTip.x > pinkyTip.x) {
-        // Controlla solo SFASAMENTO e SCALA
+        // Se distanza tra indice e pollice è piccola → mano chiusa
+        if (distance < 10) {
+          grabActive = true;
+        }
+      }
+      // Mano sinistra
+      else {
         sfasamento = map(indexTip.x, 0, video.width, 0, 100);
         scaleFactor = map(indexTip.y, 0, video.height, 2, 0.5);
         scaleFactor = constrain(scaleFactor, 0.5, 2);
@@ -67,7 +76,6 @@ function draw() {
 function drawUniqueVideoGridOnFace(face, cols = 5, rows = 6) {
   let left = face.box.xMin;
   let top = face.box.yMin;
-
   let boxWidth = face.box.width;
   let boxHeight = face.box.height;
 
@@ -77,13 +85,26 @@ function drawUniqueVideoGridOnFace(face, cols = 5, rows = 6) {
   let cellW = baseCellW * scaleFactor;
   let cellH = baseCellH * scaleFactor;
 
+  let centerX = left + boxWidth / 2;
+  let centerY = top + boxHeight / 2;
+
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       let cx = left + baseCellW * x;
       let cy = top + baseCellH * y;
 
+      let targetX = cx;
+      let targetY = cy;
+
+      // Se la mano è chiusa, porta i tasselli verso il centro
+      if (grabActive) {
+        let lerpAmt = 0.85;
+        targetX = lerp(cx, centerX, lerpAmt);
+        targetY = lerp(cy, centerY, lerpAmt);
+      }
+
       push();
-      translate(cx + baseCellW / 2, cy + baseCellH / 2);
+      translate(targetX + baseCellW / 2, targetY + baseCellH / 2);
       rotate(rotationAngle);
 
       copy(
